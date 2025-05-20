@@ -18,12 +18,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CWA_API_KEY = os.getenv("CWA_API_KEY")
-
 
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 parser = WebhookParser(CHANNEL_SECRET)
@@ -60,6 +58,7 @@ TAIWAN_LOCATIONS = {
 }
 
 def load_history():
+    """載入歷史對話記錄"""
     global chat_history
     try:
         if os.path.exists(HISTORY_FILE):
@@ -70,6 +69,7 @@ def load_history():
         chat_history = {}
 
 def save_history():
+    """儲存歷史對話記錄"""
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(chat_history, f, ensure_ascii=False, indent=2)
@@ -84,6 +84,7 @@ def index():
 
 @app.route("/callback", methods=["POST"])
 def callback():
+    """LINE Webhook 回調處理"""
     signature = request.headers.get("X-Line-Signature")
     body = request.get_data(as_text=True)
     
@@ -98,8 +99,71 @@ def callback():
     
     return "OK"
 
+@app.route("/api/history/<user_id>", methods=["GET"])
+def get_user_history(user_id):
+    """獲取特定用戶的對話歷史 (RESTful API)"""
+    if user_id in chat_history:
+        response_data = {
+            "status": "success",
+            "user_id": user_id,
+            "history": chat_history[user_id],
+            "count": len(chat_history[user_id])
+        }
+        return Response(
+            json.dumps(response_data, ensure_ascii=False),
+            mimetype='application/json'
+        )
+    else:
+        response_data = {
+            "status": "error",
+            "message": "User not found"
+        }
+        return Response(
+            json.dumps(response_data, ensure_ascii=False),
+            mimetype='application/json',
+            status=404
+        )
+
+@app.route("/api/history/<user_id>", methods=["DELETE"])
+def delete_user_history(user_id):
+    """刪除特定用戶的對話歷史 (RESTful API)"""
+    if user_id in chat_history:
+        del chat_history[user_id]
+        save_history()
+        response_data = {
+            "status": "success",
+            "message": f"History for user {user_id} deleted"
+        }
+        return Response(
+            json.dumps(response_data, ensure_ascii=False),
+            mimetype='application/json'
+        )
+    else:
+        response_data = {
+            "status": "error",
+            "message": "User not found"
+        }
+        return Response(
+            json.dumps(response_data, ensure_ascii=False),
+            mimetype='application/json',
+            status=404
+        )
+
+@app.route("/api/history", methods=["GET"])
+def get_all_history():
+    """獲取所有用戶的對話歷史 (RESTful API)"""
+    response_data = {
+        "status": "success",
+        "total_users": len(chat_history),
+        "history": chat_history
+    }
+    return Response(
+        json.dumps(response_data, ensure_ascii=False),
+        mimetype='application/json'
+    )
+
 def get_weather(location_input):
-    """天氣查詢功能保持不變"""
+    """天氣查詢功能"""
     try:
         location_name = TAIWAN_LOCATIONS.get(location_input, location_input)
         url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization={CWA_API_KEY}&format=JSON"
@@ -141,6 +205,7 @@ def get_weather(location_input):
         return "天氣資料處理異常"
 
 def handle_message(event):
+    """處理 LINE 訊息"""
     user_id = event.source.user_id
     user_text = event.message.text.strip()
     
